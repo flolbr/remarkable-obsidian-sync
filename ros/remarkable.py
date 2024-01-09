@@ -1,6 +1,6 @@
 import json
-import os
 import sys
+from functools import cached_property
 from pathlib import Path
 from typing import Optional
 
@@ -8,6 +8,7 @@ from rmscene import read_tree
 from rmscene.scene_items import ParagraphStyle
 from rmscene.text import TextDocument
 
+from ros.utils import read_json
 from vars import template_directory
 
 
@@ -113,17 +114,7 @@ class RemarkablePage:
         return f"RemarkablePage(uuid={self.uuid})"
 
 
-class RemarkableDocument:
-    def _find_pages(self) -> list[Path]:
-        # return list(self._root_directory.glob(f"{self._uuid}/*.rm"))
-        return [self._path / f"{page['id']}.rm" for page in self.content['cPages']['pages'] if 'deleted' not in page]
-
-    def _read_json(self, filename: str) -> dict:
-        if os.path.isfile(self._root_directory / filename):
-            data = open(self._root_directory / filename, 'r').read().strip()
-            return {} if data == "Blank" else json.loads(data)
-        return {}
-
+class RemarkableType:
     def __init__(self, uuid: str, root_directory: Path):
         self._root_directory = root_directory
         self._uuid = uuid
@@ -132,14 +123,73 @@ class RemarkableDocument:
         self.content = self._read_json(f'{uuid}.content')  # TODO: convert to RemarkableContent
         self.metadata = self._read_json(f'{uuid}.metadata')  # TODO: convert to RemarkableMetadata
 
+        self.name = self.metadata.get('visibleName', 'Untitled')
         self.tags = [tag['name'] for tag in self.content['tags']]
 
-        self.name = self.metadata.get('visibleName', 'Untitled')
+        if self.metadata['parent'] == '':
+            self.parent = None
+        else:
+            self.parent = RemarkableCollection.create(self.metadata['parent'], self._root_directory, self)
+
+    @cached_property
+    def parents(self) -> list[str]:
+        if self.parent is None:
+            return []
+        return self.parent.parents + [self.parent.name]
+
+    def get_parent(self, level: int = 0) -> Optional['RemarkableCollection']:
+        if level < 0:
+            raise ValueError("Level must be positive")
+        if level > 0:
+            return self.parent.get_parent(level - 1)
+        return self.parent
+
+    def _read_json(self, filename: str) -> dict:
+        data = read_json(self._root_directory / filename)
+        if data:
+            return data
+        return {}
+
+    def __str__(self):
+        return self.__repr__()
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(name={self.name}, uuid={self._uuid})"
+
+
+class RemarkableCollection(RemarkableType):
+
+    collections: dict[str, 'RemarkableCollection'] = {}
+
+    def __init__(self, root_directory: Path, uuid: str):
+        super().__init__(uuid, root_directory)
+
+        self.children: dict[str, RemarkableType] = {}
+
+    @classmethod
+    def create(cls, uuid: str, _root_directory: Path, child: RemarkableType):
+        if uuid in cls.collections:
+            if child._uuid not in cls.collections[uuid].children:
+                cls.collections[uuid].children[child._uuid] = child
+            return cls.collections[child._uuid]
+        else:
+            r = cls(_root_directory, uuid)
+            cls.collections[uuid] = r
+            r.children[child._uuid] = child
+            return r
+
+
+class RemarkableDocument(RemarkableType):
+    def _find_pages(self) -> list[Path]:
+        # return list(self._root_directory.glob(f"{self._uuid}/*.rm"))
+        return [self._path / f"{page['id']}.rm" for page in self.content['cPages']['pages'] if 'deleted' not in page]
+
+    def __init__(self, uuid: str, root_directory: Path):
+        super().__init__(uuid, root_directory)
+
         self.background = "pdf" in self.content['fileType']
 
         self.pages = [RemarkablePage(p, self) for p in self._find_pages()]
-
-        # TODO: add an array of parent directories
 
     def page_by_id(self, uuid: str) -> RemarkablePage:
         return next(filter(lambda p: p.uuid == uuid, self.pages))
@@ -168,9 +218,3 @@ class RemarkableDocument:
     def save_content(self):
         with open(self._root_directory / f"{self._uuid}.content", "w", encoding='utf8') as f:
             json.dump(self.content, f, indent=4)
-
-    def __str__(self):
-        return f"RemarkableDocument(name={self.name}, uuid={self._uuid})"
-
-    def __repr__(self):
-        return f"RemarkableDocument(name={self.name}, uuid={self._uuid})"

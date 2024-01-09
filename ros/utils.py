@@ -27,7 +27,7 @@ def get_uuids_to_process(directory: Path, filter_tag: Optional[str] = IMPORT_TAG
 
     output = []
     for uuid in uuids:
-        content = RM_read_json(directory / f"{uuid}.content")
+        content = read_json(directory / f"{uuid}.content")
         try:
             tags = [tag['name'] for tag in content['tags']]
         except TypeError:
@@ -43,7 +43,7 @@ def get_uuids_to_process(directory: Path, filter_tag: Optional[str] = IMPORT_TAG
     return output
 
 
-def RM_read_json(filepath: Path) -> Optional[dict]:
+def read_json(filepath: Path) -> Optional[dict]:
     if os.path.isfile(filepath):
         data = open(filepath, 'r', encoding='utf8').read().strip()
         return None if data == "Blank" else json.loads(data)
