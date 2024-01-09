@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -47,7 +48,7 @@ def get_uuids_to_process(directory: Path, filter_tag: Optional[str] = IMPORT_TAG
             page_tags = [tag['name'] for tag in content['pageTags']]
         except TypeError:
             page_tags = []
-        print(tags, page_tags)
+        # print(tags, page_tags)
         if filter_tag in tags + page_tags:
             output.append(uuid)
 
@@ -74,22 +75,37 @@ class RemarkablePage:
         self.path = path
         self.uuid = path.stem
         self.parent = parent
-        self._text_document = extract_doc(self.path)
+
+        with open(self.path, "rb") as f:
+            self._tree = read_tree(f)
 
         self.tags = set(tag['name'] for tag in self.parent.content['pageTags'] if tag['pageId'] == self.uuid)
 
-        self.page_number = next((i + 1 for i, page in enumerate(self.parent.content['cPages']['pages']) if page['id'] == self.uuid), 0)
+        self.page_number = next(
+            (i + 1 for i, page in enumerate(self.parent.content['cPages']['pages']) if page['id'] == self.uuid), 0)
         self.name = f"{self.parent.name} - Page {self.page_number}"
 
-        # Improve the name of the page
-        try:
-            if self._text_document.contents[0].style.value == ParagraphStyle.HEADING:
-                self.name = f"{self.parent.name} - {self._text_document.contents[0].contents[0].s}"
-        except IndexError:
-            pass
+        self._text_document = TextDocument.from_scene_item(self._tree.root_text) if self._tree.root_text else None
+
+        # Improve the name of the page if possible
+        if self.has_text:
+            try:
+                if self._text_document.contents[0].style.value == ParagraphStyle.HEADING:
+                    self.name = f"{self.parent.name} - {self._text_document.contents[0].contents[0].s}"
+            except IndexError:
+                pass
+
+    @property
+    def has_text(self) -> bool:
+        return self._text_document is not None
 
     def to_obsidian(self, template: Optional[str] = None) -> Optional[str]:
         text = ""
+        if not self.has_text:
+            print(f"Page {self} is empty", file=sys.stderr)
+            # TODO: Use Excalidraw to generate a diagram instead ?
+            return None
+
         if len(self._text_document.contents) == 0:
             return None
 
@@ -159,7 +175,7 @@ class RemarkablePage:
 class RemarkableDocument:
     def _find_pages(self) -> list[Path]:
         # return list(self._root_directory.glob(f"{self._uuid}/*.rm"))
-        return [self._path / f"{page['id']}.rm" for page in self.content['cPages']['pages']]
+        return [self._path / f"{page['id']}.rm" for page in self.content['cPages']['pages'] if 'deleted' not in page]
 
     def _read_json(self, filename: str) -> dict:
         if os.path.isfile(self._root_directory / filename):
@@ -190,7 +206,8 @@ class RemarkableDocument:
     def to_obsidian(self, template: str = None) -> str:
         text = f"# {self.name}\n\n"
         for page in self.pages:
-            text += page.to_obsidian() + '\n'
+            if page.has_text:
+                text += page.to_obsidian() + '\n'
 
         if template:
             template_text = open(template_directory / f"{template}.md", 'r', encoding='utf8').read()
@@ -199,6 +216,8 @@ class RemarkableDocument:
         return text
 
     def replace_tag(self, frm, to):
+        if self.name == '.keep':
+            return
         for tag in self.content['tags']:
             if tag['name'] == frm:
                 tag['name'] = to
