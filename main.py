@@ -3,8 +3,8 @@ from ros.utils import get_uuids_to_process
 from vars import *
 
 
-def app(remarkables_directory: Path, vault_directory, overwrite: bool = True) -> bool:
-    def save(name: str, content: str) -> None:
+def app(remarkables_directory: Path, vault_directory, overwrite: bool = OVERWRITE):
+    def save(name: str, content: str) -> bool:
         directory = vault_directory / INGEST_DIRECTORY
         directory.mkdir(parents=True, exist_ok=True)
         file_path = directory / f"{name}.md"
@@ -24,7 +24,9 @@ def app(remarkables_directory: Path, vault_directory, overwrite: bool = True) ->
     rm_docs = [RemarkableDocument(uuid, remarkables_directory) for uuid in uuids]
 
     for rm_doc in rm_docs:
-        choice = input(f'Do you want to process "{rm_doc.name}" ? ([y]/n)')
+        if rm_doc.name == '.ignore':
+            continue
+        choice = IMPORT_ALL or input(f'Do you want to process "{rm_doc.name}" ? ([y]/n)\n')
         # choice = True
         if choice == 'n':
             continue
@@ -45,11 +47,12 @@ def app(remarkables_directory: Path, vault_directory, overwrite: bool = True) ->
                         if len(template_tags) > 1:
                             print(f"Multiple templates found for {page}, not using any template")
                         obsidian = page.to_obsidian()
+                        if not obsidian:
+                            # print(f"No text found for {page}, skipping")
+                            continue
                     print(obsidian)
                     if save(page.name, obsidian):
                         page.replace_tag(IMPORT_TAG, 'Obsidian/Imported')
-
-    # TODO: update and save the tags
 
     exit(0)
 

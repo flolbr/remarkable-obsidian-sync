@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 from functools import cached_property
 from pathlib import Path
@@ -94,6 +95,11 @@ class RemarkablePage:
 
             old_style = paragraph.style.value
 
+        # Clean up the text
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = re.sub(r'^(\s*-\s)\s+', '\\1', text, flags=re.MULTILINE)
+        text = re.sub(r'\s+$', '', text, flags=re.MULTILINE)
+
         if template:
             template_text = open(template_directory / f"{template}.md", 'r', encoding='utf8').read()
             text = template_text.replace('<% tp.file.selection() %>', text)
@@ -171,12 +177,12 @@ class RemarkableCollection(RemarkableType):
         if uuid in cls.collections:
             if child._uuid not in cls.collections[uuid].children:
                 cls.collections[uuid].children[child._uuid] = child
-            return cls.collections[child._uuid]
+            return cls.collections[uuid]
         else:
-            r = cls(_root_directory, uuid)
-            cls.collections[uuid] = r
-            r.children[child._uuid] = child
-            return r
+            collection = cls(_root_directory, uuid)
+            cls.collections[uuid] = collection
+            collection.children[child._uuid] = child
+            return collection
 
 
 class RemarkableDocument(RemarkableType):
@@ -207,7 +213,7 @@ class RemarkableDocument(RemarkableType):
         return text
 
     def replace_tag(self, frm, to):
-        if self.name == '.keep':
+        if self.name == '.keep' or '.keep' in self.tags:
             return
         for tag in self.content['tags']:
             if tag['name'] == frm:
