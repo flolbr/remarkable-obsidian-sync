@@ -22,7 +22,7 @@ class RemarkablePage:
         with open(self.path, "rb") as f:
             self._tree = read_tree(f)
 
-        self.tags = set(tag['name'] for tag in self.parent.content['pageTags'] if tag['pageId'] == self.uuid)
+        self.tags = [tag['name'] for tag in self.parent.content['pageTags'] if tag['pageId'] == self.uuid]
 
         self.page_number = next(
             (i + 1 for i, page in enumerate(self.parent.content['cPages']['pages']) if page['id'] == self.uuid), 0)
@@ -34,7 +34,8 @@ class RemarkablePage:
         if self.has_text:
             try:
                 if self._text_document.contents[0].style.value == ParagraphStyle.HEADING:
-                    self.name = f"{self.parent.name} - {self._text_document.contents[0].contents[0].s}"
+                    self.name = (f"{self.parent.name} - {self._text_document.contents[0].contents[0].s}"
+                                 .replace('/', ' - ').strip())
             except IndexError:
                 pass
 

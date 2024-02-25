@@ -1,3 +1,5 @@
+from urllib.parse import urlencode, quote
+
 from ros.remarkable import RemarkableDocument
 from ros.utils import get_uuids_to_process
 from vars import *
@@ -15,6 +17,13 @@ def app(remarkables_directory: Path, vault_directory, overwrite: bool = OVERWRIT
         with open(file_path, "w", encoding='utf8') as f:
             f.write(content)
 
+            if True:
+                md = 'obsidian://open?' + urlencode({
+                    'vault': VAULT_NAME,
+                    'file': f'{INGEST_DIRECTORY}/{name}.md'
+                }, quote_via=quote)
+                print(f"Opening {md}")
+                os.startfile(f'"{md}"')
         return True
 
     uuids = get_uuids_to_process(remarkables_directory)
@@ -22,6 +31,8 @@ def app(remarkables_directory: Path, vault_directory, overwrite: bool = OVERWRIT
     print(uuids)
 
     rm_docs = [RemarkableDocument(uuid, remarkables_directory) for uuid in uuids]
+
+    saved = 0
 
     for rm_doc in rm_docs:
         if rm_doc.name == '.ignore':
@@ -36,11 +47,12 @@ def app(remarkables_directory: Path, vault_directory, overwrite: bool = OVERWRIT
             print(obsidian)
             if save(rm_doc.name, obsidian):
                 rm_doc.replace_tag(IMPORT_TAG, 'Obsidian/Imported')
+                saved += 1
         else:
             for page in rm_doc.pages:
                 if IMPORT_TAG in page.tags:
                     print(f"Processing {page}")
-                    template_tags = list(page.tags & available_templates)
+                    template_tags = list(set(page.tags + rm_doc.parents) & available_templates)
                     if len(template_tags) == 1:
                         obsidian = page.to_obsidian(template_tags[0])
                     else:
@@ -53,6 +65,19 @@ def app(remarkables_directory: Path, vault_directory, overwrite: bool = OVERWRIT
                     print(obsidian)
                     if save(page.name, obsidian):
                         page.replace_tag(IMPORT_TAG, 'Obsidian/Imported')
+                        saved += 1
+
+    if saved:
+        import psutil
+
+        procname = "reMarkable.exe"  # TODO: make this cross-platform
+
+        for proc in psutil.process_iter():
+            # check whether the process name matches
+            if proc.name() == procname:
+                proc.kill()
+                # reopen the app
+                os.startfile("C:/Program Files/reMarkable/reMarkable.exe")  # TODO: make this cross-platform
 
     exit(0)
 
